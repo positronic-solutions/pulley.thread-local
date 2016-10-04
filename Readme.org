@@ -83,7 +83,7 @@ along with pulley.thread-local.  If not, see <http://www.gnu.org/licenses/>.
   To use =pulley.thread-local=, first add the following dependency:
 
   #+begin_src clojure
-    [pulley.thread-local "0.1.0"]
+    [com.positronic-solutions/pulley.thread-local "0.1.0"]
   #+end_src
 
   Then =require= the =com.positronic-solutions.pulley.thread-local= namespace.
@@ -232,7 +232,7 @@ along with pulley.thread-local.  If not, see <http://www.gnu.org/licenses/>.
    The Leiningen project file is also very simple:
 
    #+begin_src clojure :noweb yes :tangle project.clj
-     (defproject pulley.thread-local "0.1.0"
+     (defproject com.positronic-solutions/pulley.thread-local "0.1.0"
        :description "Truly thread-local bindings for Clojure"
        :url "https://github.com/positronic-solutions/pulley.thread-local"
        :license {:name "GNU Lesser General Public License, v. 3 or later"
