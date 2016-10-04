@@ -105,9 +105,10 @@ along with pulley.thread-local.  If not, see <http://www.gnu.org/licenses/>.
     ;; => :foo
 
     ;; Re-binding foo in a different thread only affects that thread
-    (run (fn []
-           (reset! foo :bar)
-           @foo))
+    (-> (new Thread (fn []
+                      (reset! foo :bar)
+                      (println @foo)))
+        (. (start)))
     ;; => :bar
 
     ;; The binding on other threads is not affected
