@@ -1,0 +1,243 @@
+#+title: pulley.thread-local
+#+author: Nathan Davis, Positronic Solutions, LLC
+#+date:
+
+#+begin_comment
+Copyright 2016 Positronic Solutions, LLC.
+
+This file is part of pulley.thread-local.
+
+pulley.thread-local is free software: you can redistribute it and/or modify
+it under the terms of the GNU Lesser General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+pulley.thread-local is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU Lesser General Public License
+along with pulley.thread-local.  If not, see <http://www.gnu.org/licenses/>.
+#+end_comment
+
+* What is =pulley=?
+  =pulley= is the Positronic utility libraries.
+  It is a collection of relatively small, simple libraries
+  developed by [[http://www.positronic-solutions.com][Positronic Solutions, LLC]].
+  It is our pleasure to make them available to the public.
+* What is =pulley.thread-local=?
+  =pulley.thread-local= is part of the =pulley= collection of libraries.
+  It provides an extension of Java'a =ThreadLocal= class
+  that implements Clojure's =IAtom= interface.
+  The result is a thread-local reference type
+  that integrates seamlessly with the rest of Clojure's reference types.
+* Motivation
+  Clojure already provides dynamic vars which provide a type
+  of thread-local bindings.
+  In fact, the Clojure docs describe dynamic vars
+  using terms such as "thread-bound".
+  So why do we need =pulley.thread-local=?
+
+  While dynamic vars are useful in a lot of cases,
+  they do not really align perfectly with the concept
+  of a thread-local reference.
+  The bindings for dynamic vars are of dynamic extent
+  — they change by virtue of winding / unwinding the control stack.
+  Sometimes we want a thread-local binding,
+  but need more explicit control over its lifetime.
+
+  Another issue with dynamic vars is that it is possible
+  to capture and restore the current dynamic environment
+  (e.g., =bound-fn=).
+  This is extremely useful in certain situations
+  where we wish to delay execution of a function
+  that depends on implicit arguments stored in the dynamic environment.
+  If we don't save and restore the dynamic environment in this case,
+  the wrong bindings will be in place when the function is executed.
+  The result is a bug.
+  In some cases, however, it would be a bug to capture certain bindings.
+
+  For example, an HTTP server library might wish
+  to provide a binding for the current response stream.
+  For ease of access, this binding could be provided via a top-level variable.
+  Obviously, this variable must be bound to thread-local values.
+  Otherwise, multiple threads would be unable
+  to reliably access the output stream associated with the current request.
+  On the other hand, if a dynamic var is used,
+  it would be easy to inadvertantly capure the binding
+  and restore it in a context where the stream is no longer valid.
+  In situtations like this, it may be more appropriate
+  to explicitly control the capture and restoration of a specific variable,
+  rather than lumping it together with the entire dynamic context.
+
+  In short, while Clojure's dynamic vars are very useful in a number of cases,
+  there are times when you simply want a thread-local binding
+  without the restrictions of dynamic vars.
+  =pulley.thread-local= exists for these cases.
+
+  Of course, there's a trade-off here.
+  What you gain in control, you lose in the need for more explicit management.
+  Choose wisely and tread softly....
+* Usage
+  To use =pulley.thread-local=,
+  first =require= the =com.positronic-solutions.pulley.thread-local= namespace.
+
+  #+begin_src clojure
+    (require '[com.positronic-solutions.pulley.thread-local :as thread-local])
+  #+end_src
+
+  =pulley.thread-local= provides a single function, =thread-local=,
+  which constructs an atom-like reference object.
+  The value dereferenced depends on the current thread.
+  The value passed to =thread-local= will be the default value
+  (i.e., the initial value associated with a new thread).
+
+  #+begin_src clojure
+    (def foo (thread-local/thread-local :foo))
+  #+end_src
+
+  Once constructed, we can use the same operations we would use
+  on a Clojure =atom=.
+
+  #+begin_src clojure
+    (deref foo)
+    ;; => :foo
+
+    ;; Re-binding foo in a different thread only affects that thread
+    (run (fn []
+           (reset! foo :bar)
+           @foo))
+    ;; => :bar
+
+    ;; The binding on other threads is not affected
+    @foo
+    ;; => :foo
+  #+end_src
+* License
+  =pulley.thread-local= is licensed
+  under the GNU Lesser General Public License, version 3 or later.
+* Code
+  =pulley.thread-local= is written in a Literate Programming format.
+  All source code for the library is contained in this document
+  (specifically this section).
+  The source code can be extracted via Emacs Org mode and Org babel.
+** =thread-local.clj=
+   =pulley.thread-local='s interface consists of a single function
+   within a single namespace:
+
+   #+begin_src clojure :noweb yes :mkdirp yes :tangle src/clj/com/positronic_solutions/pulley/thread_local.clj
+     (ns com.positronic-solutions.pulley.thread-local)
+
+     (defn thread-local [root-value]
+       (new com.positronic_solutions.pulley.thread_local.RootedThreadLocal root-value))
+   #+end_src
+
+   As you can see, virtually all functionality is implemented
+   by the ~RootedThreadLocal~ class.
+** =RootedThreadLocal.java=
+   The ~RootedThreadLocal~ class implements the heart of =pulley.thread-local=.
+   It extends ~java.lang.ThreadLocal~ (to override the ~initialValue~ method),
+   and implements ~IDeref~ and ~IAtom~ from ~clojure.lang~.
+
+   It is necessary to implement this in Java, because:
+   * We must override ~ThreadLocal~'s ~initialValue~ method
+     to produce the "root" value,
+     since ~ThreadLocal~'s implementation simply returns ~null~.
+   * Clojure's ~deftype~, ~reify~, etc. do not support class inheritance.
+     (We could use ~proxy~, but that has a performance cost.)
+     So it is not possible to extend ~ThreadLocal~ using Clojure.
+
+   While we could wrap ~RootedThreadLocal~
+   and implement ~IDeref~ and ~IAtom~ in Clojure
+   (e.g., with ~reify~ or ~defype~),
+   there seems to be little (if any) benefit to doing so.
+   The code is trival enough to implement in Java
+   without any significant disadvantage.
+   On the other hand, exposing the ~RootedThreadLocal~ object directly
+   allows Java code to utilize the ~ThreadLocal~ interface with it.
+   This could be beneficial for interop purposes.
+
+   #+begin_src java :noweb yes :tangle :mkdirp yes :tangle src/java/com/positronic_solutions/pulley/thread_local/RootedThreadLocal.java
+     package com.positronic_solutions.pulley.thread_local;
+
+     public class RootedThreadLocal extends ThreadLocal
+                                    implements clojure.lang.IDeref,
+                                               clojure.lang.IAtom {
+         private final Object root_value;
+
+         protected Object initialValue(){
+             return this.root_value;
+         }
+
+         public RootedThreadLocal(Object root_value){
+             this.root_value = root_value;
+         }
+
+         public Object deref(){
+             return this.get();
+         }
+
+         public Object swap(clojure.lang.IFn f){
+             final Object old_value = this.deref();
+             final Object new_value = f.invoke(old_value);
+             return this.reset(new_value);
+         }
+
+         public Object swap(clojure.lang.IFn f, Object x){
+             final Object old_value = this.deref();
+             final Object new_value = f.invoke(old_value, x);
+             return this.reset(new_value);
+         }
+
+         public Object swap(clojure.lang.IFn f, Object x, Object y){
+             final Object old_value = this.deref();
+             final Object new_value = f.invoke(old_value, x, y);
+             return this.reset(new_value);
+         }
+
+         public Object swap(clojure.lang.IFn f,
+                            Object x,
+                            Object y,
+                            clojure.lang.ISeq args){
+             final Object old_value = this.deref();
+             final Object new_value = f.applyTo(args.cons(y).cons(x).cons(old_value));
+             return this.reset(new_value);
+         }
+
+         public boolean compareAndSet(Object oldv, Object newv){
+             final Object v = this.deref();
+             if(clojure.lang.Util.equiv(v, oldv)){
+                 this.reset(newv);
+                 return true;
+             }
+             else{
+                 return false;
+             }
+         }
+
+         public Object reset(Object newval){
+             this.set(newval);
+             return newval;
+         }
+     }
+   #+end_src
+** =project.clj=
+   The Leiningen project file is also very simple:
+
+   #+begin_src clojure :noweb yes :tangle project.clj
+     (defproject pulley.thread-local "0.1.0-SNAPSHOT"
+       :description "Truly thread-local bindings for Clojure"
+       :url "https://github.com/positronic-solutions/pulley.thread-local"
+       :license {:name "GNU Lesser General Public License, v. 3 or later"
+                 :url "http://www.gnu.org/licenses/lgpl.html"
+                 :distribution :repo}
+       :dependencies [[org.clojure/clojure "1.8.0"]]
+       :source-paths ["src/clj"]
+       :java-source-paths ["src/java"])
+   #+end_src
+
+   Since we have both Clojure and Java source,
+   we split the code into =src/clj= and =src/java=.
+   Therefore, we must add appropriate values
+   for ~:source-paths~ and ~:java-source-paths~.
